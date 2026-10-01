@@ -4,24 +4,43 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import java.io.ByteArrayInputStream;
+
 public class MainActivity extends Activity {
 
     private static final String HOME = "https://gemini.google.com/app";
+
+    // Tap highlight off + near-zero animations/blur for old hardware
+    private static final String CSS =
+        "*{-webkit-tap-highlight-color:transparent!important;-webkit-touch-callout:none}"
+        + "*,*::before,*::after{animation-duration:1ms!important;animation-delay:0s!important;"
+        + "transition-duration:1ms!important;transition-delay:0s!important;"
+        + "scroll-behavior:auto!important;backdrop-filter:none!important;"
+        + "-webkit-backdrop-filter:none!important}"
+        + "html,body{overscroll-behavior:none}";
+
     private static final String INJECT =
         "(function(){if(document.getElementById('nth'))return;"
         + "var s=document.createElement('style');s.id='nth';"
-        + "s.textContent='*{-webkit-tap-highlight-color:transparent!important;"
-        + "-webkit-touch-callout:none}';"
+        + "s.textContent='" + CSS + "';"
         + "(document.head||document.documentElement).appendChild(s);})()";
+
+    private static final String[] BLOCKED = {
+        "google-analytics.com", "googletagmanager.com", "doubleclick.net",
+        "googlesyndication.com", "googleadservices.com", "play.google.com/log",
+        "/gen_204", "adservice.google"
+    };
 
     private WebView web;
     private ValueCallback<Uri[]> fileCb;
@@ -30,7 +49,9 @@ public class MainActivity extends Activity {
         if (host == null) return false;
         return host.endsWith("google.com") || host.endsWith("gstatic.com")
             || host.endsWith("googleusercontent.com") || host.endsWith("googleapis.com")
-            || host.endsWith("gvt1.com") || host.endsWith("ggpht.com");
+            || host.endsWith("gvt1.com") || host.endsWith("ggpht.com")
+            || host.endsWith("youtube.com") || host.endsWith("google.co.in")
+            || host.endsWith("withgoogle.com");
     }
 
     @Override
@@ -38,6 +59,9 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         web = new WebView(this);
         web.setBackgroundColor(0xFF131314);
+        web.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        web.setVerticalScrollBarEnabled(false);
+        web.setHorizontalScrollBarEnabled(false);
         setContentView(web, new ViewGroup.LayoutParams(-1, -1));
 
         WebSettings s = web.getSettings();
@@ -45,7 +69,7 @@ public class MainActivity extends Activity {
         s.setDomStorageEnabled(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setSupportMultipleWindows(false);
-        // Remove the WebView marker so Google sign-in is not blocked
+        s.setTextZoom(100);
         String ua = s.getUserAgentString().replace("; wv", "").replace("Version/4.0 ", "");
         s.setUserAgentString(ua);
 
@@ -65,12 +89,25 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public WebResourceResponse shouldInterceptRequest(WebView v, WebResourceRequest r) {
+                String u = r.getUrl().toString();
+                for (String k : BLOCKED) {
+                    if (u.contains(k)) {
+                        return new WebResourceResponse("text/plain", "utf-8", 204, "No Content",
+                            null, new ByteArrayInputStream(new byte[0]));
+                    }
+                }
+                return null;
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
                 Uri u = r.getUrl();
                 String sch = u.getScheme();
-                if (("https".equals(sch) || "http".equals(sch)) && isInternal(u.getHost())) {
-                    return false;
-                }
+                boolean web = "https".equals(sch) || "http".equals(sch);
+                if (web && isInternal(u.getHost())) return false;
+                // Redirects (sign-in chains) always stay inside the app
+                if (web && (r.isRedirect() || !r.hasGesture())) return false;
                 try {
                     startActivity(new Intent(Intent.ACTION_VIEW, u));
                 } catch (Exception ignored) { }
