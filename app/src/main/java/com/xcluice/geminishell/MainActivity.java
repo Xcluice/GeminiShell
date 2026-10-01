@@ -28,10 +28,13 @@ public class MainActivity extends Activity {
         + "transition-duration:1ms!important;transition-delay:0s!important;"
         + "scroll-behavior:auto!important;backdrop-filter:none!important;"
         + "-webkit-backdrop-filter:none!important}"
-        + "html,body{overscroll-behavior:none}";
+        + "html,body{overscroll-behavior:none}"
+        + "img,video,canvas,a{-webkit-user-drag:none!important;user-drag:none!important}";
 
     private static final String INJECT =
         "(function(){if(document.getElementById('nth'))return;"
+        + "document.addEventListener('dragstart',function(e){e.preventDefault();},true);"
+        + "document.addEventListener('contextmenu',function(e){var t=e.target;if(t&&t.tagName==='IMG')e.preventDefault();},true);"
         + "var s=document.createElement('style');s.id='nth';"
         + "s.textContent='" + CSS + "';"
         + "(document.head||document.documentElement).appendChild(s);})()";
@@ -63,6 +66,14 @@ public class MainActivity extends Activity {
         web.setVerticalScrollBarEnabled(false);
         web.setHorizontalScrollBarEnabled(false);
         setContentView(web, new ViewGroup.LayoutParams(-1, -1));
+
+        web.setHapticFeedbackEnabled(false);
+        // Consume long-press on images: it starts a drag that freezes old Android
+        web.setOnLongClickListener(v -> {
+            int t = web.getHitTestResult().getType();
+            return t == WebView.HitTestResult.IMAGE_TYPE
+                || t == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE;
+        });
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
